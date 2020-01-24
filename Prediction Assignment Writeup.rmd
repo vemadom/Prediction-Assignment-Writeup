@@ -1,0 +1,147 @@
+---
+title: "Prediction Assignment Writeup"
+author: "Ivan Vemado Marques"
+date: "21/01/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Instructions
+
+One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants.
+
+*The goal of your project is to predict the manner in which they did the exercise.*
+
+
+## Loading and Tidying
+
+Let's beginning with some exploratory data analysis.
+But first we need load some packages for working with dat and load the training dataset.
+
+*Data*
+
+The training data for this project are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+The data for this project come from this source: http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har
+
+
+```{r loadlib, echo=T, results='hide', message=F, warning=F}
+##install.packages("ggplot2", dependencies = T)
+##install.packages("caret", dependencies = T)
+##install.packages("gbm", dependencies = T)
+##install.packages("corrplot", dependencies = T)
+##install.packages("rattle", dependencies = T)
+##install.packages("rpart", dependencies = T)
+##install.packages("rpart.plot", dependencies = T)
+
+library(ggplot2)
+library(caret)
+library(gbm)
+library(corrplot)
+library(rattle)
+library(rpart)
+library(rpart.plot)
+```
+
+Let's see a little bit of the structure of dataset training.
+
+```{r, results = "hide"}
+training <- read.csv("~/Desktop/R/pml-training.csv")
+
+head(training)
+tail(training)
+
+str(training)
+```
+
+Let's make a tidy dataset. Removing the variables with Nearly Zero Variance and with many NA observations.
+
+```{r}
+training <- training[, -nearZeroVar(training)]
+
+nulls    <- sapply(training, function(x) mean(is.na(x))) > 0.9
+training <- training[, nulls == FALSE]
+```
+```{r, results = "hide"}
+head(training)
+str(training)
+```
+
+Still we need to remove the rest of ID variables in the dataset.
+
+```{r}
+training <- training[, -(1:5)]
+```
+```{r, results = "hide"}
+head(training)
+str(training)
+```
+
+## Preparing dataset
+
+Now, we need to set a seed for the research become reproducible.
+After we will create the partition of validation.
+
+```{r}
+set.seed(12345)
+
+inTrain <- createDataPartition(training$classe, p = 0.7, list = FALSE)
+trainds <- training[inTrain, ]
+testds <- training[-inTrain, ]
+```
+
+## Correlations
+
+Here we need to evaluate the correlations of the variables to decide if we will use PCA as pre-processing method for modeling.
+
+```{r}
+mcor <- cor(trainds[, -54])
+corrplot(mcor, type = "upper", order = "hclust", tl.col = "black", tl.cex = 0.4)
+```
+
+How they have few correlations, we will maintain all variables to modeling.
+
+Now we will run three methods of modeling for the classification problem and the predictions of them with cross-validation technique to improve accuracy.
+Through a Confusion Matrix we can compare the accuracy of the models.
+
+```{r}
+#Setting Cross-Validation method
+trCtrl <- trainControl(method="cv", number=5, verboseIter=FALSE)
+
+#Random Forest
+fit_rf <- train(classe ~ ., data = trainds, method = "rf", trControl=trCtrl)
+pr_rf <- predict(fit_rf, newdata=testds)
+
+#Gradient Boosting
+fit_gbm <- train(classe ~ ., data = trainds, method = "gbm", trControl=trCtrl, verbose = FALSE)
+pr_gbm <- predict(fit_gbm, newdata=testds)
+
+#Linear Discriminant Analysis
+fit_lda <- train(classe ~ ., data = trainds, method = "lda", trControl=trCtrl, verbose = FALSE)
+pr_lda <- predict(fit_lda, newdata=testds)
+
+#Confusion Matrix
+confusionMatrix(pr_rf, testds$classe)$overall[1]
+confusionMatrix(pr_gbm, testds$classe)$overall[1]
+confusionMatrix(pr_lda, testds$classe)$overall[1]
+```
+
+### Conclusion
+
+**_After analysis, the Random Forest regression model was better fitting with accuracy 0.996 than others Gradient Boosting (0.984) and Linear Discriminant Analysis (0.707). So, let's see the plot of them:_**
+
+```{r}
+plot(fit_rf$finalModel, main = "Random Forest")
+plot(fit_gbm, main = "Gradient Boosting")
+plot(fit_lda$results, main = "Linear Discriminant Analysis")
+```
+
